@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# claude-context — launcher for the ~/.claude search tool
+exec python3 "$HOME/.claude/tools/src/claude_context.py" "$@"
