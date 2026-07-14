@@ -58,7 +58,7 @@ Each hit is labeled and color-coded by where it came from:
 
 ## How the "real path" is resolved
 
-The encoded project dir name (`-Users-smacgregor-sandpit-…`) is **lossy** —
+The encoded project dir name (`-Users-xxxxx-sandpit-…`) is **lossy** —
 both `.` and `/` collapse to `-`, so it can't be reversed reliably. Instead, for
 conversation and project-memory hits the tool reads the authoritative `cwd`
 field embedded in the matching `.jsonl` line (or peeks at a sibling session file
