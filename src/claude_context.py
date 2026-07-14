@@ -1165,6 +1165,29 @@ def group_hits(hits: list[Hit]) -> dict[str, list[Hit]]:
     return groups
 
 
+def build_recall_rows(hits: list[Hit]) -> list[dict]:
+    """Group hits by project/location, pick the best-scoring hit per group,
+    and return a ranked list of {location, kind, best_hit, hit_count,
+    other_ids} dicts. Shared by the rich table and --format json/jsonl/compact
+    so every output mode surfaces the same grouped-and-ranked structure
+    instead of a flat, ungrouped hit list."""
+    groups = group_hits(hits)
+    rows = []
+    for key, ghits in groups.items():
+        best = max(ghits, key=lambda h: h.score)
+        other_ids = [h.id for h in ghits if h.id != best.id]
+        rows.append({
+            "location": key,
+            "kind": best.kind,
+            "label": label_for(best.kind),
+            "best_hit": hit_to_dict(best),
+            "hit_count": len(ghits),
+            "other_ids": other_ids,
+        })
+    rows.sort(key=lambda r: r["best_hit"]["score"], reverse=True)
+    return rows
+
+
 def sorted_group_keys(groups: dict[str, list[Hit]], sort: str) -> list[str]:
     if sort == "recent":
         return sorted(groups, key=lambda k: max((h.epoch or 0) for h in groups[k]), reverse=True)
@@ -1344,12 +1367,7 @@ def render_recall(hits: list[Hit], terms: list[str], desc: str | None = None) ->
     if not hits:
         console.print(f"[dim]No matches for[/] {label}")
         return
-    groups = group_hits(hits)
-    rows = []
-    for key, ghits in groups.items():
-        best = max(ghits, key=lambda h: h.score)
-        rows.append((key, best, len(ghits)))
-    rows.sort(key=lambda r: -r[1].score)
+    rows = build_recall_rows(hits)
 
     table = Table(title=f"Recall: {label} — {len(rows)} location(s)")
     table.add_column("Id", style="dim")
@@ -1359,12 +1377,42 @@ def render_recall(hits: list[Hit], terms: list[str], desc: str | None = None) ->
     table.add_column("Score", justify="right")
     table.add_column("Hits", justify="right")
     table.add_column("Takeaway", overflow="fold")
-    for key, best, count in rows:
-        date = datetime.fromtimestamp(best.epoch).strftime("%Y-%m-%d") if best.epoch else "—"
-        table.add_row(best.id, str(key), Text(label_for(best.kind), style=color_for(best.kind)),
-                      date, f"{best.score:g}", str(count), (best.snippet or "")[:140])
+    for row in rows:
+        best = row["best_hit"]
+        date = (best["date"] or "—")[:10]
+        table.add_row(
+            best["id"], str(row["location"]),
+            Text(row["label"], style=color_for(row["kind"])),
+            date, f"{best['score']:g}", str(row["hit_count"]),
+            (best["snippet"] or "")[:140],
+        )
     console.print(table)
     console.print("[dim]Use --expand <id> for full detail, or --related <id> to dig deeper.[/]")
+
+
+def render_recall_machine(hits: list[Hit], terms: list[str], fmt: str,
+                          desc: str | None = None) -> None:
+    """--recall counterpart to render_machine — emits the grouped-by-location,
+    ranked-by-score structure (not a flat hit list) for json/jsonl/compact."""
+    rows = build_recall_rows(hits)
+    label = desc or (" ".join(terms))
+    if fmt == "json":
+        print(json.dumps({
+            "query": label,
+            "location_count": len(rows),
+            "hit_count": len(hits),
+            "locations": rows,
+        }, indent=2, ensure_ascii=False))
+    elif fmt == "jsonl":
+        for row in rows:
+            print(json.dumps(row, ensure_ascii=False))
+    elif fmt == "compact":
+        for row in rows:
+            best = row["best_hit"]
+            snippet = (best["snippet"] or "").replace("\n", " ")[:100]
+            print(f"id={best['id']} score={best['score']:g} "
+                  f"hits={row['hit_count']:<3} {row['label']:<14} "
+                  f"{row['location']}  {snippet}")
 
 
 # --------------------------------------------------------------------------- #
@@ -1545,7 +1593,8 @@ def main(argv=None) -> int:
     if args.stats:
         render_stats(hits) if fmt == "rich" else render_machine(hits, fmt)
     elif args.recall:
-        render_recall(hits, all_terms, desc) if fmt == "rich" else render_machine(hits, fmt)
+        render_recall(hits, all_terms, desc) if fmt == "rich" else \
+            render_recall_machine(hits, all_terms, fmt, desc)
     elif fmt != "rich":
         render_machine(hits, fmt)
     elif args.verbose:
