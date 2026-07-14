@@ -12,11 +12,6 @@ unicode-aware); the JSON match stream is parsed and rendered with
 
 ## Install
 
-Already installed:
-
-- Tool: `~/.claude/tools/claude_context.py`
-- Launcher: `~/bin/claude-context` (on your `PATH`)
-
 Requires `python3` + `rich` (`python3 -m pip install rich`) and, ideally, `rg`.
 
 ## Usage
